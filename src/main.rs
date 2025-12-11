@@ -164,14 +164,6 @@ unsafe extern "system" fn wnd_proc(
                 WPARAM(H_FONT.0 as usize),
                 LPARAM(1),
             );
-
-            if IS_DARK_MODE {
-                // Set text color for dark mode
-                let hdc = GetDC(H_CALC_LABEL);
-                SetTextColor(hdc, COLORREF(0x00FFFFFF));
-                SetBkColor(hdc, COLORREF(0x00202020));
-                ReleaseDC(H_CALC_LABEL, hdc);
-            }
             ShowWindow(H_CALC_LABEL, SW_HIDE);
 
             H_LIST = CreateWindowExW(
@@ -279,6 +271,20 @@ unsafe extern "system" fn wnd_proc(
                 return LRESULT(CreateSolidBrush(COLORREF(0x00303030)).0 as isize);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
+        WM_CTLCOLORSTATIC => {
+            // Handle static control (calculator label) colors
+            if IS_DARK_MODE {
+                let hdc = HDC(wparam.0 as isize);
+                SetTextColor(hdc, COLORREF(0x0090EE90)); // Light green for calculator result
+                SetBkColor(hdc, COLORREF(0x00202020));
+                return LRESULT(CreateSolidBrush(COLORREF(0x00202020)).0 as isize);
+            } else {
+                let hdc = HDC(wparam.0 as isize);
+                SetTextColor(hdc, COLORREF(0x00008000)); // Dark green for calculator result
+                SetBkColor(hdc, COLORREF(0x00F0F0F0));
+                return LRESULT(CreateSolidBrush(COLORREF(0x00F0F0F0)).0 as isize);
+            }
         }
         WM_APP_TRAY => {
             if lparam.0 as u32 == WM_RBUTTONUP {
