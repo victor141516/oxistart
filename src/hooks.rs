@@ -1,7 +1,4 @@
-use windows::{
-    core::*, Win32::Foundation::*, Win32::UI::Input::KeyboardAndMouse::*,
-    Win32::UI::WindowsAndMessaging::*,
-};
+use windows::{core::*, Win32::Foundation::*, Win32::UI::WindowsAndMessaging::*};
 
 /// Setup keyboard hook
 pub unsafe fn setup_keyboard_hook(instance: HINSTANCE, callback: HOOKPROC) -> Result<HHOOK> {

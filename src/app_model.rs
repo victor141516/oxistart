@@ -53,11 +53,6 @@ impl AppManager {
         &self.apps
     }
 
-    /// Get mutable reference to all applications
-    pub fn apps_mut(&mut self) -> &mut Vec<AppEntry> {
-        &mut self.apps
-    }
-
     /// Get filtered indices
     pub fn filtered_indices(&self) -> &[usize] {
         &self.filtered_indices
@@ -102,15 +97,11 @@ impl AppManager {
     }
 
     /// Get an application by its index in the filtered list
+    #[allow(dead_code)]
     pub fn get_filtered_app(&self, filtered_index: usize) -> Option<&AppEntry> {
         self.filtered_indices
             .get(filtered_index)
             .and_then(|&app_idx| self.apps.get(app_idx))
-    }
-
-    /// Get the actual index of an app from its filtered index
-    pub fn get_app_index(&self, filtered_index: usize) -> Option<usize> {
-        self.filtered_indices.get(filtered_index).copied()
     }
 
     /// Increment usage count for an application

@@ -2,13 +2,13 @@
 
 <!-- Logo placeholder - Add your logo here -->
 
-![Oxistart Logo](logo.png)
+![Oxistart Logo](icon.png)
 
 # ⚡ Oxistart
 
 **The Start Menu Windows 11 Should Have Been**
 
-[Download](https://github.com/yourusername/oxistart/releases) • [Report Bug](https://github.com/yourusername/oxistart/issues) • [Request Feature](https://github.com/yourusername/oxistart/issues)
+[Download](https://github.com/victor141516/oxistart/releases) • [Report Bug](https://github.com/victor141516/oxistart/issues) • [Request Feature](https://github.com/victor141516/oxistart/issues)
 
 </div>
 
@@ -52,7 +52,7 @@ Instant search with no delays. Type and see results in **milliseconds**, not sec
 
 ## 📦 Installation
 
-1. Download `oxistart.exe` from [Releases](https://github.com/yourusername/oxistart/releases)
+1. Download `oxistart.exe` from [Releases](https://github.com/victor141516/oxistart/releases)
 2. Run it
 3. Done. Press the Windows key and enjoy.
 
@@ -93,6 +93,6 @@ Because the Start Menu shouldn't show you advertisements.
 
 Made with ❤️ and frustration with Windows 11
 
-**[⭐ Star this project if you also hate Windows 11's Start Menu](https://github.com/yourusername/oxistart)**
+**[⭐ Star this project if you also hate Windows 11's Start Menu](https://github.com/victor141516/oxistart)**
 
 </div>

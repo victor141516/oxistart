@@ -144,6 +144,8 @@ pub unsafe fn update_listview(list_hwnd: HWND, app_manager: &AppManager) {
 
 /// Add a system tray icon
 pub unsafe fn add_tray_icon(hwnd: HWND) -> Result<()> {
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+
     let mut tooltip = [0u16; 128];
     let msg_wide = utils::to_wide_string("Oxistart");
     for (i, &c) in msg_wide.iter().enumerate() {
@@ -152,13 +154,18 @@ pub unsafe fn add_tray_icon(hwnd: HWND) -> Result<()> {
         }
     }
 
+    // Load custom icon from executable resources (ID = 1 from app.rc)
+    let hinstance = GetModuleHandleW(None).unwrap_or_default();
+    let hicon = LoadIconW(hinstance, PCWSTR(1 as *const u16))
+        .unwrap_or_else(|_| LoadIconW(None, IDI_APPLICATION).unwrap_or(HICON(0)));
+
     let nid = NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
         hWnd: hwnd,
         uID: 1,
         uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
         uCallbackMessage: WM_USER + 1,
-        hIcon: LoadIconW(None, IDI_APPLICATION).unwrap_or(HICON(0)),
+        hIcon: hicon,
         szTip: tooltip,
         ..Default::default()
     };

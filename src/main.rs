@@ -105,7 +105,7 @@ unsafe fn update_filter(search: &str) {
             // Show calculation result
             let result_text = format!("= {}", result);
             let result_wide = utils::to_wide_string(&result_text);
-            SetWindowTextW(H_CALC_LABEL, PCWSTR(result_wide.as_ptr()));
+            let _ = SetWindowTextW(H_CALC_LABEL, PCWSTR(result_wide.as_ptr()));
             ShowWindow(H_CALC_LABEL, SW_SHOW);
         } else {
             ShowWindow(H_CALC_LABEL, SW_HIDE);
