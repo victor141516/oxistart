@@ -1,0 +1,222 @@
+/// Represents an application entry with its metadata
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppEntry {
+    pub name: String,
+    pub parse_name: String,
+    pub icon_index: i32,
+    pub usage_count: i32,
+}
+
+impl AppEntry {
+    /// Create a new AppEntry
+    pub fn new(name: String, parse_name: String, icon_index: i32, usage_count: i32) -> Self {
+        Self {
+            name,
+            parse_name,
+            icon_index,
+            usage_count,
+        }
+    }
+}
+
+/// Manages a collection of applications
+pub struct AppManager {
+    apps: Vec<AppEntry>,
+    filtered_indices: Vec<usize>,
+}
+
+impl AppManager {
+    /// Create a new empty AppManager
+    pub fn new() -> Self {
+        Self {
+            apps: Vec::new(),
+            filtered_indices: Vec::new(),
+        }
+    }
+
+    /// Add an application to the manager
+    pub fn add_app(&mut self, app: AppEntry) {
+        self.apps.push(app);
+    }
+
+    /// Clear all applications
+    pub fn clear(&mut self) {
+        self.apps.clear();
+        self.filtered_indices.clear();
+    }
+
+    /// Get all applications
+    pub fn apps(&self) -> &[AppEntry] {
+        &self.apps
+    }
+
+    /// Get mutable reference to all applications
+    pub fn apps_mut(&mut self) -> &mut Vec<AppEntry> {
+        &mut self.apps
+    }
+
+    /// Get filtered indices
+    pub fn filtered_indices(&self) -> &[usize] {
+        &self.filtered_indices
+    }
+
+    /// Sort applications by usage count (descending) and name (ascending)
+    pub fn sort_by_usage(&mut self) {
+        self.apps.sort_by(|a, b| {
+            b.usage_count
+                .cmp(&a.usage_count)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+    }
+
+    /// Filter applications by search term
+    pub fn filter(&mut self, search: &str) {
+        self.filtered_indices.clear();
+        let search_lower = search.to_lowercase();
+
+        for (i, app) in self.apps.iter().enumerate() {
+            if search_lower.is_empty() || app.name.to_lowercase().contains(&search_lower) {
+                self.filtered_indices.push(i);
+            }
+        }
+    }
+
+    /// Get an application by its index in the filtered list
+    pub fn get_filtered_app(&self, filtered_index: usize) -> Option<&AppEntry> {
+        self.filtered_indices
+            .get(filtered_index)
+            .and_then(|&app_idx| self.apps.get(app_idx))
+    }
+
+    /// Get the actual index of an app from its filtered index
+    pub fn get_app_index(&self, filtered_index: usize) -> Option<usize> {
+        self.filtered_indices.get(filtered_index).copied()
+    }
+
+    /// Increment usage count for an application
+    pub fn increment_usage(&mut self, app_index: usize) {
+        if let Some(app) = self.apps.get_mut(app_index) {
+            app.usage_count += 1;
+        }
+    }
+}
+
+impl Default for AppManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_entry_creation() {
+        let app = AppEntry::new(
+            "Test App".to_string(),
+            "shell:AppsFolder\\TestApp".to_string(),
+            0,
+            5,
+        );
+
+        assert_eq!(app.name, "Test App");
+        assert_eq!(app.parse_name, "shell:AppsFolder\\TestApp");
+        assert_eq!(app.icon_index, 0);
+        assert_eq!(app.usage_count, 5);
+    }
+
+    #[test]
+    fn test_app_manager_add_and_get() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new("App1".to_string(), "path1".to_string(), 0, 3));
+
+        manager.add_app(AppEntry::new("App2".to_string(), "path2".to_string(), 1, 5));
+
+        assert_eq!(manager.apps().len(), 2);
+        assert_eq!(manager.apps()[0].name, "App1");
+        assert_eq!(manager.apps()[1].name, "App2");
+    }
+
+    #[test]
+    fn test_sort_by_usage() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new("App1".to_string(), "path1".to_string(), 0, 3));
+        manager.add_app(AppEntry::new("App2".to_string(), "path2".to_string(), 1, 5));
+        manager.add_app(AppEntry::new("App3".to_string(), "path3".to_string(), 2, 1));
+
+        manager.sort_by_usage();
+
+        assert_eq!(manager.apps()[0].name, "App2");
+        assert_eq!(manager.apps()[1].name, "App1");
+        assert_eq!(manager.apps()[2].name, "App3");
+    }
+
+    #[test]
+    fn test_filter() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new(
+            "Calculator".to_string(),
+            "path1".to_string(),
+            0,
+            3,
+        ));
+        manager.add_app(AppEntry::new(
+            "Calendar".to_string(),
+            "path2".to_string(),
+            1,
+            5,
+        ));
+        manager.add_app(AppEntry::new(
+            "Notepad".to_string(),
+            "path3".to_string(),
+            2,
+            1,
+        ));
+
+        manager.filter("cal");
+
+        assert_eq!(manager.filtered_indices().len(), 2);
+        assert_eq!(manager.get_filtered_app(0).unwrap().name, "Calculator");
+        assert_eq!(manager.get_filtered_app(1).unwrap().name, "Calendar");
+    }
+
+    #[test]
+    fn test_filter_empty() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new("App1".to_string(), "path1".to_string(), 0, 3));
+        manager.add_app(AppEntry::new("App2".to_string(), "path2".to_string(), 1, 5));
+
+        manager.filter("");
+
+        assert_eq!(manager.filtered_indices().len(), 2);
+    }
+
+    #[test]
+    fn test_increment_usage() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new("App1".to_string(), "path1".to_string(), 0, 3));
+
+        manager.increment_usage(0);
+
+        assert_eq!(manager.apps()[0].usage_count, 4);
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new("App1".to_string(), "path1".to_string(), 0, 3));
+        manager.filter("");
+
+        manager.clear();
+
+        assert_eq!(manager.apps().len(), 0);
+        assert_eq!(manager.filtered_indices().len(), 0);
+    }
+}
