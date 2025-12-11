@@ -2,13 +2,13 @@
 
 <!-- Logo placeholder - Add your logo here -->
 
-![StartWin Logo](logo.png)
+![Oxistart Logo](logo.png)
 
-# ⚡ StartWin
+# ⚡ Oxistart
 
 **The Start Menu Windows 11 Should Have Been**
 
-[Download](https://github.com/yourusername/startwin/releases) • [Report Bug](https://github.com/yourusername/startwin/issues) • [Request Feature](https://github.com/yourusername/startwin/issues)
+[Download](https://github.com/yourusername/oxistart/releases) • [Report Bug](https://github.com/yourusername/oxistart/issues) • [Request Feature](https://github.com/yourusername/oxistart/issues)
 
 </div>
 
@@ -26,7 +26,7 @@ Tired of Windows 11's Start Menu? So are we:
 
 ## ✨ The Solution
 
-**StartWin** replaces Windows Start Menu with something that actually works:
+**Oxistart** replaces Windows Start Menu with something that actually works:
 
 ### 🚀 Fast. REALLY Fast.
 
@@ -48,17 +48,17 @@ Instant search with no delays. Type and see results in **milliseconds**, not sec
 
 <!-- Screenshot placeholder - Add your screenshot here -->
 
-![StartWin Screenshot](screenshot.png)
+![Oxistart Screenshot](screenshot.png)
 
 ## 📦 Installation
 
-1. Download `startwin.exe` from [Releases](https://github.com/yourusername/startwin/releases)
+1. Download `oxistart.exe` from [Releases](https://github.com/yourusername/oxistart/releases)
 2. Run it
 3. Done. Press the Windows key and enjoy.
 
 ## 🛠️ Features
 
-| Feature                  | StartWin   | Windows 11 |
+| Feature                  | Oxistart   | Windows 11 |
 | ------------------------ | ---------- | ---------- |
 | Speed                    | ⚡ Instant | 🐌 Slow    |
 | Fuzzy search             | ✅         | ❌         |
@@ -77,7 +77,7 @@ Built with Rust 🦀 for maximum performance:
 - **Low-level hooks**: Replaces Start button without hacks
 - **SQLite database**: Efficient usage tracking
 
-## 🎯 Why Use StartWin?
+## 🎯 Why Use Oxistart?
 
 Because your time is worth more than waiting 3 seconds every time you want to open an application.
 
@@ -85,7 +85,7 @@ Because you don't need Bing to suggest "how to use Excel" when you just want to 
 
 Because the Start Menu shouldn't show you advertisements.
 
-**StartWin is what the Start Menu should have always been: fast, simple, and useful.**
+**Oxistart is what the Start Menu should have always been: fast, simple, and useful.**
 
 ---
 
@@ -93,6 +93,6 @@ Because the Start Menu shouldn't show you advertisements.
 
 Made with ❤️ and frustration with Windows 11
 
-**[⭐ Star this project if you also hate Windows 11's Start Menu](https://github.com/yourusername/startwin)**
+**[⭐ Star this project if you also hate Windows 11's Start Menu](https://github.com/yourusername/oxistart)**
 
 </div>

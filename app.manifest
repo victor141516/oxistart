@@ -3,10 +3,10 @@
 <assemblyIdentity
     version="1.0.0.0"
     processorArchitecture="*"
-    name="StartWin"
+    name="Oxistart"
     type="win32"
 />
-<description>StartWin Application</description>
+<description>Oxistart Application</description>
 <dependency>
     <dependentAssembly>
         <assemblyIdentity

@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         }
 
         let instance = GetModuleHandleW(None)?;
-        let class_name = w!("StartWinClass");
+        let class_name = w!("OxistartClass");
 
         let wc = WNDCLASSW {
             hCursor: LoadCursorW(None, IDC_ARROW)?,
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
         MY_WINDOW = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
             class_name,
-            w!("StartWin"),
+            w!("Oxistart"),
             WS_POPUP,
             0,
             0,
@@ -293,7 +293,7 @@ unsafe extern "system" fn wnd_proc(
                 let _ = GetCursorPos(&mut pt);
                 SetForegroundWindow(hwnd);
                 let hmenu = CreatePopupMenu().unwrap_or(HMENU(0));
-                let _ = AppendMenuW(hmenu, MF_STRING, ID_TRAY_EXIT, w!("Exit StartWin"));
+                let _ = AppendMenuW(hmenu, MF_STRING, ID_TRAY_EXIT, w!("Exit Oxistart"));
                 TrackPopupMenu(
                     hmenu,
                     TPM_BOTTOMALIGN | TPM_LEFTALIGN,

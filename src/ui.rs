@@ -145,7 +145,7 @@ pub unsafe fn update_listview(list_hwnd: HWND, app_manager: &AppManager) {
 /// Add a system tray icon
 pub unsafe fn add_tray_icon(hwnd: HWND) -> Result<()> {
     let mut tooltip = [0u16; 128];
-    let msg_wide = utils::to_wide_string("StartWin");
+    let msg_wide = utils::to_wide_string("Oxistart");
     for (i, &c) in msg_wide.iter().enumerate() {
         if i < 127 {
             tooltip[i] = c;
