@@ -143,16 +143,16 @@ unsafe extern "system" fn wnd_proc(
             );
             SendMessageW(H_EDIT, WM_SETFONT, WPARAM(H_FONT.0 as usize), LPARAM(1));
 
-            // Create calculator result label
+            // Create calculator result label (below the input, left-aligned)
             H_CALC_LABEL = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 w!("STATIC"),
                 None,
-                WINDOW_STYLE(WS_CHILD.0 | 0x00000002), // WS_CHILD | SS_RIGHT
+                WINDOW_STYLE(WS_CHILD.0 | 0x00000000), // WS_CHILD | SS_LEFT
                 10,
-                10,
+                40,
                 370,
-                25,
+                20,
                 hwnd,
                 HMENU(ID_CALC_RESULT as isize),
                 None,
@@ -179,9 +179,9 @@ unsafe extern "system" fn wnd_proc(
                         | LVS_SHAREIMAGELISTS as u32,
                 ),
                 10,
-                45,
+                70,
                 380,
-                545,
+                520,
                 hwnd,
                 HMENU(ID_LIST as isize),
                 None,
@@ -219,7 +219,8 @@ unsafe extern "system" fn wnd_proc(
             let width = (lparam.0 & 0xFFFF) as i32;
             let height = ((lparam.0 >> 16) & 0xFFFF) as i32;
             let _ = MoveWindow(H_EDIT, 10, 10, width - 20, 25, true);
-            let _ = MoveWindow(H_LIST, 10, 45, width - 20, height - 55, true);
+            let _ = MoveWindow(H_CALC_LABEL, 10, 40, width - 20, 20, true);
+            let _ = MoveWindow(H_LIST, 10, 70, width - 20, height - 80, true);
             let mut col = LVCOLUMNW {
                 mask: LVCF_WIDTH,
                 cx: width - 40,
@@ -276,13 +277,13 @@ unsafe extern "system" fn wnd_proc(
             // Handle static control (calculator label) colors
             if IS_DARK_MODE {
                 let hdc = HDC(wparam.0 as isize);
-                SetTextColor(hdc, COLORREF(0x0090EE90)); // Light green for calculator result
-                SetBkColor(hdc, COLORREF(0x00202020));
+                SetTextColor(hdc, COLORREF(0x00FFFFFF)); // White text for dark mode
+                SetBkColor(hdc, COLORREF(0x00202020)); // Dark background
                 return LRESULT(CreateSolidBrush(COLORREF(0x00202020)).0 as isize);
             } else {
                 let hdc = HDC(wparam.0 as isize);
-                SetTextColor(hdc, COLORREF(0x00008000)); // Dark green for calculator result
-                SetBkColor(hdc, COLORREF(0x00F0F0F0));
+                SetTextColor(hdc, COLORREF(0x00000000)); // Black text for light mode
+                SetBkColor(hdc, COLORREF(0x00F0F0F0)); // Light background
                 return LRESULT(CreateSolidBrush(COLORREF(0x00F0F0F0)).0 as isize);
             }
         }
@@ -437,66 +438,126 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                 return LRESULT(1);
             }
             if GetForegroundWindow() == MY_WINDOW {
+                // Keep focus on the edit control always
+                if GetFocus() != H_EDIT {
+                    SetFocus(H_EDIT);
+                }
+
                 if kbd.vkCode == VK_DOWN.0 as u32 {
-                    if GetFocus() == H_EDIT {
-                        SetFocus(H_LIST);
-                        let sel = SendMessageW(
+                    // Navigate down in the list without changing focus
+                    let sel = SendMessageW(
+                        H_LIST,
+                        LVM_GETNEXTITEM,
+                        WPARAM(usize::MAX),
+                        LPARAM(LVNI_SELECTED as isize),
+                    );
+                    let count = SendMessageW(H_LIST, LVM_GETITEMCOUNT, WPARAM(0), LPARAM(0));
+
+                    if sel.0 == -1 && count.0 > 0 {
+                        // No selection, select first item
+                        let mut item = LVITEMW {
+                            mask: LVIF_STATE,
+                            state: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0),
+                            stateMask: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0),
+                            iItem: 0,
+                            ..Default::default()
+                        };
+                        SendMessageW(
                             H_LIST,
-                            LVM_GETNEXTITEM,
-                            WPARAM(usize::MAX),
-                            LPARAM(LVNI_SELECTED as isize),
+                            LVM_SETITEMSTATE,
+                            WPARAM(0),
+                            LPARAM(&mut item as *mut _ as isize),
                         );
-                        if sel.0 == -1 {
-                            let mut item = LVITEMW {
-                                mask: LVIF_STATE,
-                                state: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0),
-                                stateMask: LIST_VIEW_ITEM_STATE_FLAGS(
-                                    LVIS_SELECTED.0 | LVIS_FOCUSED.0,
-                                ),
-                                iItem: 0,
-                                ..Default::default()
-                            };
-                            SendMessageW(
-                                H_LIST,
-                                LVM_SETITEMSTATE,
-                                WPARAM(0),
-                                LPARAM(&mut item as *mut _ as isize),
-                            );
-                        }
-                        return LRESULT(1);
+                    } else if sel.0 < count.0 - 1 {
+                        // Select next item
+                        let mut item = LVITEMW {
+                            mask: LVIF_STATE,
+                            state: LIST_VIEW_ITEM_STATE_FLAGS(0),
+                            stateMask: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0),
+                            iItem: sel.0 as i32,
+                            ..Default::default()
+                        };
+                        SendMessageW(
+                            H_LIST,
+                            LVM_SETITEMSTATE,
+                            WPARAM(sel.0 as usize),
+                            LPARAM(&mut item as *mut _ as isize),
+                        );
+
+                        item.state = LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0);
+                        item.iItem = sel.0 as i32 + 1;
+                        SendMessageW(
+                            H_LIST,
+                            LVM_SETITEMSTATE,
+                            WPARAM((sel.0 + 1) as usize),
+                            LPARAM(&mut item as *mut _ as isize),
+                        );
+                        SendMessageW(
+                            H_LIST,
+                            LVM_ENSUREVISIBLE,
+                            WPARAM((sel.0 + 1) as usize),
+                            LPARAM(0),
+                        );
                     }
+                    return LRESULT(1);
                 }
                 if kbd.vkCode == VK_UP.0 as u32 {
-                    if GetFocus() == H_LIST {
-                        let sel = SendMessageW(
+                    // Navigate up in the list without changing focus
+                    let sel = SendMessageW(
+                        H_LIST,
+                        LVM_GETNEXTITEM,
+                        WPARAM(usize::MAX),
+                        LPARAM(LVNI_SELECTED as isize),
+                    );
+
+                    if sel.0 > 0 {
+                        // Select previous item
+                        let mut item = LVITEMW {
+                            mask: LVIF_STATE,
+                            state: LIST_VIEW_ITEM_STATE_FLAGS(0),
+                            stateMask: LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0),
+                            iItem: sel.0 as i32,
+                            ..Default::default()
+                        };
+                        SendMessageW(
                             H_LIST,
-                            LVM_GETNEXTITEM,
-                            WPARAM(usize::MAX),
-                            LPARAM(LVNI_SELECTED as isize),
+                            LVM_SETITEMSTATE,
+                            WPARAM(sel.0 as usize),
+                            LPARAM(&mut item as *mut _ as isize),
                         );
-                        if sel.0 == 0 {
-                            SetFocus(H_EDIT);
-                            return LRESULT(1);
-                        }
+
+                        item.state = LIST_VIEW_ITEM_STATE_FLAGS(LVIS_SELECTED.0 | LVIS_FOCUSED.0);
+                        item.iItem = sel.0 as i32 - 1;
+                        SendMessageW(
+                            H_LIST,
+                            LVM_SETITEMSTATE,
+                            WPARAM((sel.0 - 1) as usize),
+                            LPARAM(&mut item as *mut _ as isize),
+                        );
+                        SendMessageW(
+                            H_LIST,
+                            LVM_ENSUREVISIBLE,
+                            WPARAM((sel.0 - 1) as usize),
+                            LPARAM(0),
+                        );
                     }
+                    return LRESULT(1);
                 }
                 if kbd.vkCode == VK_RETURN.0 as u32 {
                     let is_alt_pressed = GetKeyState(VK_MENU.0 as i32) < 0;
                     let is_shift_pressed = GetKeyState(VK_SHIFT.0 as i32) < 0;
 
-                    if GetFocus() == H_EDIT {
-                        if is_alt_pressed {
-                            // Alt+Enter: Run as administrator
-                            launch_selected_app_as_admin();
-                        } else if is_shift_pressed {
-                            // Shift+Enter: Open file location
-                            launch_selected_app_location();
-                        } else {
-                            // Normal Enter: Launch app
-                            launch_selected_app();
-                        }
-                        return LRESULT(1);
+                    if is_alt_pressed {
+                        // Alt+Enter: Run as administrator
+                        launch_selected_app_as_admin();
+                    } else if is_shift_pressed {
+                        // Shift+Enter: Open file location
+                        launch_selected_app_location();
+                    } else {
+                        // Normal Enter: Launch app
+                        launch_selected_app();
                     }
+                    return LRESULT(1);
                 }
                 if kbd.vkCode == VK_ESCAPE.0 as u32 {
                     if IsWindowVisible(MY_WINDOW).as_bool() {
