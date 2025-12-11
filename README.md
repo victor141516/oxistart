@@ -14,6 +14,18 @@
 
 ---
 
+## 📺 Demo
+
+<div align="center">
+
+![Demo](https://i.imgur.com/lrkrJgM.gif)
+
+_Quick demonstration of Oxistart in action_
+
+</div>
+
+---
+
 ## 🤦 The Problem
 
 Tired of Windows 11's Start Menu? So are we:
@@ -45,10 +57,6 @@ Instant search with no delays. Type and see results in **milliseconds**, not sec
 - `Alt+Enter` → Run as administrator
 - `Shift+Enter` → Open file location
 - `Esc` → Close menu
-
-<!-- Screenshot placeholder - Add your screenshot here -->
-
-![Oxistart Screenshot](screenshot.png)
 
 ## 📦 Installation
 
