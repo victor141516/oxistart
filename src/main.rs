@@ -1,6 +1,7 @@
 #![windows_subsystem = "windows"]
 
 mod app_model;
+mod calculator;
 mod db;
 mod hooks;
 mod scanner;
@@ -27,8 +28,10 @@ const WM_APP_TRAY: u32 = WM_USER + 1;
 const ID_TRAY_EXIT: usize = 1001;
 const ID_EDIT: i32 = 1002;
 const ID_LIST: i32 = 1003;
+const ID_CALC_RESULT: i32 = 1004;
 static mut IS_DARK_MODE: bool = false;
 static mut H_FONT: HFONT = HFONT(0);
+static mut H_CALC_LABEL: HWND = HWND(0);
 
 fn main() -> Result<()> {
     unsafe {
@@ -96,6 +99,21 @@ fn main() -> Result<()> {
 }
 
 unsafe fn update_filter(search: &str) {
+    // Check if it's a mathematical expression
+    if calculator::is_math_expression(search) {
+        if let Some(result) = calculator::evaluate(search) {
+            // Show calculation result
+            let result_text = format!("= {}", result);
+            let result_wide = utils::to_wide_string(&result_text);
+            SetWindowTextW(H_CALC_LABEL, PCWSTR(result_wide.as_ptr()));
+            ShowWindow(H_CALC_LABEL, SW_SHOW);
+        } else {
+            ShowWindow(H_CALC_LABEL, SW_HIDE);
+        }
+    } else {
+        ShowWindow(H_CALC_LABEL, SW_HIDE);
+    }
+
     let mut manager = APP_MANAGER.lock().unwrap();
     manager.filter(search);
     ui::update_listview(H_LIST, &manager);
@@ -124,6 +142,37 @@ unsafe extern "system" fn wnd_proc(
                 None,
             );
             SendMessageW(H_EDIT, WM_SETFONT, WPARAM(H_FONT.0 as usize), LPARAM(1));
+
+            // Create calculator result label
+            H_CALC_LABEL = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                None,
+                WINDOW_STYLE(WS_CHILD.0 | 0x00000002), // WS_CHILD | SS_RIGHT
+                10,
+                10,
+                370,
+                25,
+                hwnd,
+                HMENU(ID_CALC_RESULT as isize),
+                None,
+                None,
+            );
+            SendMessageW(
+                H_CALC_LABEL,
+                WM_SETFONT,
+                WPARAM(H_FONT.0 as usize),
+                LPARAM(1),
+            );
+
+            if IS_DARK_MODE {
+                // Set text color for dark mode
+                let hdc = GetDC(H_CALC_LABEL);
+                SetTextColor(hdc, COLORREF(0x00FFFFFF));
+                SetBkColor(hdc, COLORREF(0x00202020));
+                ReleaseDC(H_CALC_LABEL, hdc);
+            }
+            ShowWindow(H_CALC_LABEL, SW_HIDE);
 
             H_LIST = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
@@ -270,7 +319,7 @@ unsafe extern "system" fn wnd_proc(
     }
 }
 
-unsafe fn launch_selected_app() {
+unsafe fn launch_selected_app_with_modifier(as_admin: bool, open_location: bool) {
     let sel = SendMessageW(
         H_LIST,
         LVM_GETNEXTITEM,
@@ -307,15 +356,42 @@ unsafe fn launch_selected_app() {
         }
     }; // El lock se libera aquí
 
-    // Ejecutar la app SIN mantener el lock
-    ShellExecuteW(
-        None,
-        w!("open"),
-        PCWSTR(parse_name_wide.as_ptr()),
-        None,
-        None,
-        SW_SHOW,
-    );
+    // Handle different actions
+    if open_location {
+        // Open file location
+        let verb = w!("open");
+        let params = format!("/select,\"{}\"", parse_name);
+        let params_wide = utils::to_wide_string(&params);
+        ShellExecuteW(
+            None,
+            verb,
+            w!("explorer.exe"),
+            PCWSTR(params_wide.as_ptr()),
+            None,
+            SW_SHOW,
+        );
+    } else if as_admin {
+        // Run as administrator
+        let verb = w!("runas");
+        ShellExecuteW(
+            None,
+            verb,
+            PCWSTR(parse_name_wide.as_ptr()),
+            None,
+            None,
+            SW_SHOW,
+        );
+    } else {
+        // Normal execution
+        ShellExecuteW(
+            None,
+            w!("open"),
+            PCWSTR(parse_name_wide.as_ptr()),
+            None,
+            None,
+            SW_SHOW,
+        );
+    }
 
     // Ocultar ventana
     ShowWindow(MY_WINDOW, SW_HIDE);
@@ -332,6 +408,18 @@ unsafe fn launch_selected_app() {
 
     // Actualizar UI sin lock
     update_filter("");
+}
+
+unsafe fn launch_selected_app() {
+    launch_selected_app_with_modifier(false, false);
+}
+
+unsafe fn launch_selected_app_as_admin() {
+    launch_selected_app_with_modifier(true, false);
+}
+
+unsafe fn launch_selected_app_location() {
+    launch_selected_app_with_modifier(false, true);
 }
 
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -387,8 +475,20 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                     }
                 }
                 if kbd.vkCode == VK_RETURN.0 as u32 {
+                    let is_alt_pressed = GetKeyState(VK_MENU.0 as i32) < 0;
+                    let is_shift_pressed = GetKeyState(VK_SHIFT.0 as i32) < 0;
+
                     if GetFocus() == H_EDIT {
-                        launch_selected_app();
+                        if is_alt_pressed {
+                            // Alt+Enter: Run as administrator
+                            launch_selected_app_as_admin();
+                        } else if is_shift_pressed {
+                            // Shift+Enter: Open file location
+                            launch_selected_app_location();
+                        } else {
+                            // Normal Enter: Launch app
+                            launch_selected_app();
+                        }
                         return LRESULT(1);
                     }
                 }

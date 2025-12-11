@@ -1,3 +1,6 @@
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+
 /// Represents an application entry with its metadata
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppEntry {
@@ -69,16 +72,33 @@ impl AppManager {
         });
     }
 
-    /// Filter applications by search term
+    /// Filter applications by search term using fuzzy matching
     pub fn filter(&mut self, search: &str) {
         self.filtered_indices.clear();
-        let search_lower = search.to_lowercase();
 
-        for (i, app) in self.apps.iter().enumerate() {
-            if search_lower.is_empty() || app.name.to_lowercase().contains(&search_lower) {
+        if search.is_empty() {
+            // If search is empty, show all apps
+            for i in 0..self.apps.len() {
                 self.filtered_indices.push(i);
             }
+            return;
         }
+
+        let matcher = SkimMatcherV2::default();
+        let mut matches: Vec<(usize, i64)> = Vec::new();
+
+        for (i, app) in self.apps.iter().enumerate() {
+            // Try fuzzy matching on the app name
+            if let Some(score) = matcher.fuzzy_match(&app.name, search) {
+                matches.push((i, score));
+            }
+        }
+
+        // Sort by score (highest first)
+        matches.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Store the indices of matched apps
+        self.filtered_indices = matches.iter().map(|(idx, _)| *idx).collect();
     }
 
     /// Get an application by its index in the filtered list
