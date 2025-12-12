@@ -1,5 +1,6 @@
 use crate::app_model::{AppEntry, AppManager};
 use crate::db;
+use crate::settings;
 use crate::utils;
 use std::ffi::c_void;
 use windows::{core::*, Win32::System::Com::*, Win32::UI::Shell::*};
@@ -15,6 +16,7 @@ pub unsafe fn scan_apps(app_manager: &mut AppManager) {
 
     let usage_map = db::load_usage_map();
 
+    // Scan applications
     if let Ok(apps_folder_item) = SHCreateItemFromParsingName::<PCWSTR, Option<&IBindCtx>, IShellItem>(
         w!("shell:AppsFolder"),
         None,
@@ -33,6 +35,21 @@ pub unsafe fn scan_apps(app_manager: &mut AppManager) {
                 }
             }
         }
+    }
+
+    // Add Windows Settings items
+    let settings_items = settings::get_settings_items();
+    for settings_item in settings_items {
+        let display_name = settings::get_localized_name(settings_item.canonical_name)
+            .unwrap_or_else(|| settings_item.display_name_en.to_string());
+
+        // Use a special icon index for settings (will be handled in UI)
+        let settings_entry = AppEntry::new_settings(
+            display_name,
+            settings_item.ms_settings_uri.to_string(),
+            -1, // Special icon index for settings
+        );
+        app_manager.add_app(settings_entry);
     }
 
     app_manager.sort_by_usage();

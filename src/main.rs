@@ -5,10 +5,11 @@ mod calculator;
 mod db;
 mod hooks;
 mod scanner;
+mod settings;
 mod ui;
 mod utils;
 
-use app_model::AppManager;
+use app_model::{AppEntryType, AppManager};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use windows::{
@@ -352,66 +353,84 @@ unsafe fn launch_selected_app_with_modifier(as_admin: bool, open_location: bool)
     let app_idx = item.lParam.0 as usize;
 
     // Obtener la información necesaria Y liberar el lock ANTES de ejecutar la app
-    let (parse_name, parse_name_wide) = {
+    let (parse_name, parse_name_wide, entry_type) = {
         let manager = APP_MANAGER.lock().unwrap();
         if let Some(app) = manager.apps().get(app_idx) {
             let parse_name = app.parse_name.clone();
             let parse_name_wide = utils::to_wide_string(&parse_name);
-            (parse_name, parse_name_wide)
+            let entry_type = app.entry_type.clone();
+            (parse_name, parse_name_wide, entry_type)
         } else {
             return;
         }
     }; // El lock se libera aquí
 
-    // Handle different actions
-    if open_location {
-        // Open file location
-        let verb = w!("open");
-        let params = format!("/select,\"{}\"", parse_name);
-        let params_wide = utils::to_wide_string(&params);
-        ShellExecuteW(
-            None,
-            verb,
-            w!("explorer.exe"),
-            PCWSTR(params_wide.as_ptr()),
-            None,
-            SW_SHOW,
-        );
-    } else if as_admin {
-        // Run as administrator
-        let verb = w!("runas");
-        ShellExecuteW(
-            None,
-            verb,
-            PCWSTR(parse_name_wide.as_ptr()),
-            None,
-            None,
-            SW_SHOW,
-        );
-    } else {
-        // Normal execution
-        ShellExecuteW(
-            None,
-            w!("open"),
-            PCWSTR(parse_name_wide.as_ptr()),
-            None,
-            None,
-            SW_SHOW,
-        );
+    // Handle different entry types
+    match entry_type {
+        AppEntryType::Settings => {
+            // Settings items: always open normally, ignore modifiers
+            // Open the ms-settings URI
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(parse_name_wide.as_ptr()),
+                None,
+                None,
+                SW_SHOW,
+            );
+        }
+        AppEntryType::Application => {
+            // Handle different actions for applications
+            if open_location {
+                // Open file location
+                let verb = w!("open");
+                let params = format!("/select,\"{}\"", parse_name);
+                let params_wide = utils::to_wide_string(&params);
+                ShellExecuteW(
+                    None,
+                    verb,
+                    w!("explorer.exe"),
+                    PCWSTR(params_wide.as_ptr()),
+                    None,
+                    SW_SHOW,
+                );
+            } else if as_admin {
+                // Run as administrator
+                let verb = w!("runas");
+                ShellExecuteW(
+                    None,
+                    verb,
+                    PCWSTR(parse_name_wide.as_ptr()),
+                    None,
+                    None,
+                    SW_SHOW,
+                );
+            } else {
+                // Normal execution
+                ShellExecuteW(
+                    None,
+                    w!("open"),
+                    PCWSTR(parse_name_wide.as_ptr()),
+                    None,
+                    None,
+                    SW_SHOW,
+                );
+            }
+
+            // Update usage only for applications, not for settings
+            {
+                let mut manager = APP_MANAGER.lock().unwrap();
+                let _ = db::increment_usage(&parse_name);
+                manager.increment_usage(app_idx);
+                manager.sort_by_usage();
+                manager.filter("");
+            }
+        }
     }
 
     // Ocultar ventana
     ShowWindow(MY_WINDOW, SW_HIDE);
     let _ = SetWindowTextW(H_EDIT, w!(""));
-
-    // Ahora actualizar el estado en un bloque separado
-    {
-        let mut manager = APP_MANAGER.lock().unwrap();
-        let _ = db::increment_usage(&parse_name);
-        manager.increment_usage(app_idx);
-        manager.sort_by_usage();
-        manager.filter("");
-    } // El lock se libera aquí
 
     // Actualizar UI sin lock
     update_filter("");

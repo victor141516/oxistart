@@ -1,4 +1,4 @@
-use crate::app_model::AppManager;
+use crate::app_model::{AppEntryType, AppManager};
 use crate::utils;
 use std::ffi::c_void;
 use windows::{
@@ -94,6 +94,44 @@ pub unsafe fn get_system_image_list() -> isize {
     ) as isize
 }
 
+/// Get icon index for settings (gear icon)
+pub unsafe fn get_settings_icon_index() -> i32 {
+    // Use SHGetStockIconInfo to get the Settings icon
+    let mut sii = SHSTOCKICONINFO {
+        cbSize: std::mem::size_of::<SHSTOCKICONINFO>() as u32,
+        ..Default::default()
+    };
+
+    // Try to get the settings icon using SIID_SETTINGS (79)
+    // If that fails, try SIID_SHIELD (77) as fallback
+    let result = SHGetStockIconInfo(
+        SHSTOCKICONID(79), // SIID_SETTINGS
+        SHGSI_ICONLOCATION | SHGSI_SYSICONINDEX,
+        &mut sii,
+    );
+
+    if result.is_ok() {
+        return sii.iSysImageIndex;
+    }
+
+    // Fallback: try to get from control panel
+    let mut shfi = SHFILEINFOW::default();
+    let control_path = utils::to_wide_string("control.exe");
+    let result = SHGetFileInfoW(
+        PCWSTR(control_path.as_ptr()),
+        FILE_FLAGS_AND_ATTRIBUTES(0),
+        Some(&mut shfi),
+        std::mem::size_of::<SHFILEINFOW>() as u32,
+        SHGFI_ICON | SHGFI_SMALLICON | SHGFI_SYSICONINDEX,
+    );
+
+    if result != 0 {
+        return shfi.iIcon;
+    }
+
+    0 // Final fallback
+}
+
 /// Update the list view with filtered applications
 pub unsafe fn update_listview(list_hwnd: HWND, app_manager: &AppManager) {
     SendMessageW(list_hwnd, LVM_DELETEALLITEMS, WPARAM(0), LPARAM(0));
@@ -104,15 +142,24 @@ pub unsafe fn update_listview(list_hwnd: HWND, app_manager: &AppManager) {
         LPARAM(0),
     );
 
+    let settings_icon_index = get_settings_icon_index();
+
     for (list_idx, &app_idx) in app_manager.filtered_indices().iter().enumerate() {
         if let Some(app) = app_manager.apps().get(app_idx) {
             let mut name_wide = utils::to_wide_string(&app.name);
+
+            // Use gear icon for settings items, otherwise use the app's icon
+            let icon_index = match app.entry_type {
+                AppEntryType::Settings => settings_icon_index,
+                AppEntryType::Application => app.icon_index,
+            };
+
             let mut item = LVITEMW {
                 mask: LVIF_TEXT | LVIF_IMAGE | LVIF_PARAM,
                 iItem: list_idx as i32,
                 iSubItem: 0,
                 pszText: PWSTR(name_wide.as_mut_ptr()),
-                iImage: app.icon_index,
+                iImage: icon_index,
                 lParam: LPARAM(app_idx as isize),
                 ..Default::default()
             };

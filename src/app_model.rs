@@ -1,6 +1,13 @@
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 
+/// Type of application entry
+#[derive(Debug, Clone, PartialEq)]
+pub enum AppEntryType {
+    Application,
+    Settings,
+}
+
 /// Represents an application entry with its metadata
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppEntry {
@@ -8,6 +15,7 @@ pub struct AppEntry {
     pub parse_name: String,
     pub icon_index: i32,
     pub usage_count: i32,
+    pub entry_type: AppEntryType,
 }
 
 impl AppEntry {
@@ -18,6 +26,18 @@ impl AppEntry {
             parse_name,
             icon_index,
             usage_count,
+            entry_type: AppEntryType::Application,
+        }
+    }
+
+    /// Create a new Settings entry
+    pub fn new_settings(name: String, parse_name: String, icon_index: i32) -> Self {
+        Self {
+            name,
+            parse_name,
+            icon_index,
+            usage_count: 0, // Settings items don't track usage
+            entry_type: AppEntryType::Settings,
         }
     }
 }
@@ -135,6 +155,22 @@ mod tests {
         assert_eq!(app.parse_name, "shell:AppsFolder\\TestApp");
         assert_eq!(app.icon_index, 0);
         assert_eq!(app.usage_count, 5);
+        assert_eq!(app.entry_type, AppEntryType::Application);
+    }
+
+    #[test]
+    fn test_settings_entry_creation() {
+        let settings = AppEntry::new_settings(
+            "Display settings".to_string(),
+            "ms-settings:display".to_string(),
+            100,
+        );
+
+        assert_eq!(settings.name, "Display settings");
+        assert_eq!(settings.parse_name, "ms-settings:display");
+        assert_eq!(settings.icon_index, 100);
+        assert_eq!(settings.usage_count, 0);
+        assert_eq!(settings.entry_type, AppEntryType::Settings);
     }
 
     #[test]
