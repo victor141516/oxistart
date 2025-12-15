@@ -2,35 +2,41 @@ use crate::app_model::{AppEntry, AppManager};
 use crate::db;
 use crate::settings;
 use crate::utils;
-use std::ffi::c_void;
-use windows::{core::*, Win32::System::Com::*, Win32::UI::Shell::*};
+use windows::{core::*, Win32::System::Com::*};
 
-#[link(name = "shell32")]
-extern "system" {
-    fn SHGetIDListFromObject(punk: IUnknown, ppidl: *mut *mut c_void) -> HRESULT;
-}
-
-/// Scan all applications from the AppsFolder
+/// Scan all applications from Start Menu shortcuts
 pub unsafe fn scan_apps(app_manager: &mut AppManager) {
     app_manager.clear();
 
     let usage_map = db::load_usage_map();
 
-    // Scan applications
-    if let Ok(apps_folder_item) = SHCreateItemFromParsingName::<PCWSTR, Option<&IBindCtx>, IShellItem>(
-        w!("shell:AppsFolder"),
-        None,
-    ) {
-        if let Ok(enum_items) = apps_folder_item
-            .BindToHandler::<Option<&IBindCtx>, IEnumShellItems>(None, &BHID_EnumItems)
-        {
-            let mut items = [None];
-            let mut fetched = 0;
+    // Get username for Start Menu paths
+    let username = std::env::var("USERNAME").unwrap_or_else(|_| "Default".to_string());
 
-            while enum_items.Next(&mut items, Some(&mut fetched)).is_ok() && fetched == 1 {
-                if let Some(item) = items[0].take() {
-                    if let Some(app) = process_shell_item(&item, &usage_map) {
-                        app_manager.add_app(app);
+    // Scan Start Menu folders
+    let start_menu_paths = [
+        format!(
+            "C:\\Users\\{}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs",
+            username
+        ),
+        "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs".to_string(),
+    ];
+
+    for start_menu_path in start_menu_paths {
+        if let Ok(entries) = std::fs::read_dir(&start_menu_path) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() {
+                        if let Some(extension) = entry.path().extension() {
+                            if extension == "lnk" {
+                                if let Some(app) = process_shortcut(&entry.path(), &usage_map) {
+                                    app_manager.add_app(app);
+                                }
+                            }
+                        }
+                    } else if file_type.is_dir() {
+                        // Recursively scan subdirectories
+                        scan_directory_recursively(&entry.path(), app_manager, &usage_map);
                     }
                 }
             }
@@ -43,12 +49,8 @@ pub unsafe fn scan_apps(app_manager: &mut AppManager) {
         let display_name = settings::get_localized_name(settings_item.canonical_name)
             .unwrap_or_else(|| settings_item.display_name_en.to_string());
 
-        // Use a special icon index for settings (will be handled in UI)
-        let settings_entry = AppEntry::new_settings(
-            display_name,
-            settings_item.ms_settings_uri.to_string(),
-            -1, // Special icon index for settings
-        );
+        let settings_entry =
+            AppEntry::new_settings(display_name, settings_item.ms_settings_uri.to_string(), -1);
         app_manager.add_app(settings_entry);
     }
 
@@ -56,50 +58,148 @@ pub unsafe fn scan_apps(app_manager: &mut AppManager) {
     app_manager.filter("");
 }
 
-/// Process a shell item to extract application information
-unsafe fn process_shell_item(
-    item: &IShellItem,
+/// Recursively scan a directory for shortcuts
+fn scan_directory_recursively(
+    dir_path: &std::path::Path,
+    app_manager: &mut AppManager,
     usage_map: &std::collections::HashMap<String, i32>,
-) -> Option<AppEntry> {
-    // Get display name
-    let name = match item.GetDisplayName(SIGDN_NORMALDISPLAY) {
-        Ok(n) => n.to_string().unwrap_or_default(),
-        Err(_) => return None,
-    };
-
-    // Get parse name
-    let parse_name = match item.GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING) {
-        Ok(n) => n.to_string().unwrap_or_default(),
-        Err(_) => return None,
-    };
-
-    // Get icon index
-    let icon_index = get_icon_index(item, &parse_name);
-
-    // Get usage count
-    let usage_count = *usage_map.get(&parse_name).unwrap_or(&0);
-
-    Some(AppEntry::new(name, parse_name, icon_index, usage_count))
+) {
+    if let Ok(entries) = std::fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            if let Ok(file_type) = entry.file_type() {
+                if file_type.is_file() {
+                    if let Some(extension) = entry.path().extension() {
+                        if extension == "lnk" {
+                            if let Some(app) = process_shortcut(&entry.path(), usage_map) {
+                                app_manager.add_app(app);
+                            }
+                        }
+                    }
+                } else if file_type.is_dir() {
+                    // Continue recursing
+                    scan_directory_recursively(&entry.path(), app_manager, usage_map);
+                }
+            }
+        }
+    }
 }
 
-/// Get icon index for a shell item
-unsafe fn get_icon_index(item: &IShellItem, parse_name: &str) -> i32 {
-    // Try PIDL method first
-    let mut pidl: *mut c_void = std::ptr::null_mut();
-    if SHGetIDListFromObject(item.cast::<IUnknown>().unwrap(), &mut pidl).is_ok() {
-        if let Some(shfi) = utils::get_file_info_pidl(pidl) {
-            CoTaskMemFree(Some(pidl as *const c_void));
-            return shfi.iIcon;
+/// Process a shortcut file to extract application information
+fn process_shortcut(
+    shortcut_path: &std::path::Path,
+    usage_map: &std::collections::HashMap<String, i32>,
+) -> Option<AppEntry> {
+    // Read the shortcut target
+    if let Some(target_path) = get_shortcut_target(shortcut_path) {
+        // Get the display name from the filename (without .lnk extension)
+        let name = shortcut_path.file_stem()?.to_string_lossy().to_string();
+
+        // Skip problematic apps
+        if should_filter_app(&name, &target_path) {
+            write_debug_log(&format!(
+                "Filtering out problematic app: {} -> {}",
+                name, target_path
+            ));
+            return None;
         }
-        CoTaskMemFree(Some(pidl as *const c_void));
+
+        // Get icon index
+        let icon_index = unsafe {
+            utils::get_file_info_path(&target_path)
+                .map(|shfi| shfi.iIcon)
+                .unwrap_or(0)
+        };
+
+        // Get usage count
+        let usage_count = *usage_map.get(&target_path).unwrap_or(&0);
+
+        write_debug_log(&format!("Added app: {} -> {}", name, target_path));
+
+        Some(AppEntry::new(name, target_path, icon_index, usage_count))
+    } else {
+        None
+    }
+}
+
+/// Get the target path from a .lnk shortcut file
+fn get_shortcut_target(shortcut_path: &std::path::Path) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::System::Com::IPersistFile;
+    use windows::Win32::UI::Shell::*;
+
+    // ShellLink CLSID: {00021401-0000-0000-C000-000000000046}
+    const CLSID_SHELL_LINK: GUID = GUID::from_u128(0x00021401_0000_0000_C000_000000000046);
+
+    unsafe {
+        // Create a shell link object
+        let shell_link: IShellLinkW =
+            CoCreateInstance(&CLSID_SHELL_LINK, None, CLSCTX_INPROC_SERVER).ok()?;
+
+        // Get the IPersistFile interface to load the shortcut
+        let persist_file: IPersistFile = shell_link.cast().ok()?;
+
+        // Load the shortcut file
+        let path_wide: Vec<u16> = shortcut_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        persist_file
+            .Load(PCWSTR(path_wide.as_ptr()), STGM(0))
+            .ok()?;
+
+        // Get the target path
+        let mut target_path = [0u16; 260];
+        shell_link
+            .GetPath(
+                &mut target_path,
+                std::ptr::null_mut(),
+                SLGP_RAWPATH.0 as u32,
+            )
+            .ok()?;
+
+        // Convert to string
+        let target_str = String::from_utf16_lossy(&target_path);
+        let target_str = target_str.trim_end_matches('\0');
+
+        if target_str.is_empty() {
+            None
+        } else {
+            Some(target_str.to_string())
+        }
+    }
+}
+
+/// Check if an app should be filtered out
+fn should_filter_app(name: &str, target_path: &str) -> bool {
+    // Filter out Microsoft Store apps that can't be launched directly
+    if target_path.contains("Microsoft.AutoGenerated.")
+        || target_path.contains("WindowsApps\\")
+        || name.to_lowercase().contains("uninstall")
+        || name.to_lowercase().contains("setup")
+    {
+        return true;
     }
 
-    // Fallback to parsing name
-    if let Some(shfi) = utils::get_file_info_path(parse_name) {
-        return shfi.iIcon;
-    }
+    false
+}
 
-    0 // Default icon index
+/// Write a message to the debug log file
+fn write_debug_log(message: &str) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("oxistart_debug.log")
+    {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let _ = std::io::Write::write_all(
+            &mut file,
+            format!("[{}] {}\n", timestamp, message).as_bytes(),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -117,7 +217,8 @@ mod tests {
 
             // We can't assert specific apps since it depends on the system,
             // but we can check that the manager is properly initialized
-            assert!(manager.apps().len() >= 0);
+            // The scan may produce apps depending on the system
+            let _ = manager.apps().len(); // Just ensure it's accessible
         }
     }
 }
