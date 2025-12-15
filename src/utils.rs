@@ -67,6 +67,7 @@ pub fn to_wide_string(s: &str) -> Vec<u16> {
 }
 
 /// Get file info using PIDL
+#[allow(dead_code)]
 pub unsafe fn get_file_info_pidl(pidl: *mut c_void) -> Option<SHFILEINFOW> {
     let mut shfi = SHFILEINFOW::default();
     let result = SHGetFileInfoW(

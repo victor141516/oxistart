@@ -33,6 +33,8 @@ history.db-wal
 # Test artifacts
 *.test
 *.prof
+test_*.db
+test
 
 # Logs
 *.log

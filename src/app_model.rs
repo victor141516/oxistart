@@ -57,9 +57,40 @@ impl AppManager {
         }
     }
 
-    /// Add an application to the manager
+    /// Add an application to the manager (with deduplication)
     pub fn add_app(&mut self, app: AppEntry) {
+        // Check for duplicates by parse_name (exact match)
+        if self
+            .apps
+            .iter()
+            .any(|existing| existing.parse_name == app.parse_name)
+        {
+            return;
+        }
+
+        // Also check for duplicates by name (case-insensitive)
+        let app_name_lower = app.name.to_lowercase();
+        if self
+            .apps
+            .iter()
+            .any(|existing| existing.name.to_lowercase() == app_name_lower)
+        {
+            return;
+        }
+
         self.apps.push(app);
+    }
+
+    /// Add an application without deduplication (for loading from cache)
+    pub fn add_app_unchecked(&mut self, app: AppEntry) {
+        self.apps.push(app);
+    }
+
+    /// Set the apps list directly (replaces all apps)
+    #[allow(dead_code)]
+    pub fn set_apps(&mut self, apps: Vec<AppEntry>) {
+        self.apps = apps;
+        self.filtered_indices.clear();
     }
 
     /// Clear all applications
@@ -263,6 +294,77 @@ mod tests {
 
         manager.clear();
 
+        assert_eq!(manager.apps().len(), 0);
+        assert_eq!(manager.filtered_indices().len(), 0);
+    }
+
+    #[test]
+    fn test_deduplication_by_parse_name() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new(
+            "App1".to_string(),
+            "path/to/app".to_string(),
+            0,
+            3,
+        ));
+        manager.add_app(AppEntry::new(
+            "App2".to_string(),
+            "path/to/app".to_string(), // Same parse_name
+            1,
+            5,
+        ));
+
+        assert_eq!(manager.apps().len(), 1);
+        assert_eq!(manager.apps()[0].name, "App1");
+    }
+
+    #[test]
+    fn test_deduplication_by_name_case_insensitive() {
+        let mut manager = AppManager::new();
+
+        manager.add_app(AppEntry::new(
+            "Calculator".to_string(),
+            "path1".to_string(),
+            0,
+            3,
+        ));
+        manager.add_app(AppEntry::new(
+            "CALCULATOR".to_string(), // Same name, different case
+            "path2".to_string(),
+            1,
+            5,
+        ));
+        manager.add_app(AppEntry::new(
+            "calculator".to_string(), // Same name, different case
+            "path3".to_string(),
+            2,
+            1,
+        ));
+
+        assert_eq!(manager.apps().len(), 1);
+        assert_eq!(manager.apps()[0].name, "Calculator");
+    }
+
+    #[test]
+    fn test_add_app_unchecked_no_deduplication() {
+        let mut manager = AppManager::new();
+
+        manager.add_app_unchecked(AppEntry::new("App1".to_string(), "path1".to_string(), 0, 3));
+        manager.add_app_unchecked(AppEntry::new(
+            "App1".to_string(),  // Same name
+            "path1".to_string(), // Same parse_name
+            0,
+            3,
+        ));
+
+        // add_app_unchecked should not deduplicate
+        assert_eq!(manager.apps().len(), 2);
+    }
+
+    #[test]
+    fn test_default_trait() {
+        let manager = AppManager::default();
         assert_eq!(manager.apps().len(), 0);
         assert_eq!(manager.filtered_indices().len(), 0);
     }
