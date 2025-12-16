@@ -35,7 +35,15 @@ const ID_LIST: i32 = 1003;
 const ID_CALC_RESULT: i32 = 1004;
 static mut IS_DARK_MODE: bool = false;
 static mut H_FONT: HFONT = HFONT(0);
+static mut H_CALC_FONT: HFONT = HFONT(0);
 static mut H_CALC_LABEL: HWND = HWND(0);
+
+// UI constants for better readability
+const PADDING: i32 = 15;
+const SEARCH_HEIGHT: i32 = 35;
+const CALC_LABEL_HEIGHT: i32 = 28;
+const LIST_TOP: i32 = PADDING + SEARCH_HEIGHT + 5 + CALC_LABEL_HEIGHT + 5;
+const ROW_HEIGHT: i32 = 36; // Height for list rows with larger icons
 
 /// Write a message to the debug log file
 fn write_debug_log(message: &str) {
@@ -266,6 +274,7 @@ fn main() -> Result<()> {
 
         ui::setup_window_style(MY_WINDOW, IS_DARK_MODE);
         H_FONT = ui::create_ui_font();
+        H_CALC_FONT = ui::create_calc_font();
         let _ = ui::add_tray_icon(MY_WINDOW);
 
         KEYBOARD_HOOK = hooks::setup_keyboard_hook(instance.into(), Some(keyboard_hook))?;
@@ -353,15 +362,16 @@ unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     match msg {
         WM_CREATE => {
+            // Create search input with larger height
             H_EDIT = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 w!("EDIT"),
                 None,
                 WINDOW_STYLE((WS_CHILD | WS_VISIBLE | WS_BORDER).0 | ES_AUTOHSCROLL as u32),
-                10,
-                10,
-                380,
-                25,
+                PADDING,
+                PADDING,
+                400 - PADDING * 2,
+                SEARCH_HEIGHT,
                 hwnd,
                 HMENU(ID_EDIT as isize),
                 None,
@@ -375,10 +385,10 @@ unsafe extern "system" fn wnd_proc(
                 w!("STATIC"),
                 None,
                 WINDOW_STYLE(WS_CHILD.0 | 0x00000000), // WS_CHILD | SS_LEFT
-                10,
-                40,
-                370,
-                20,
+                PADDING,
+                PADDING + SEARCH_HEIGHT + 5,
+                400 - PADDING * 2,
+                CALC_LABEL_HEIGHT,
                 hwnd,
                 HMENU(ID_CALC_RESULT as isize),
                 None,
@@ -387,11 +397,12 @@ unsafe extern "system" fn wnd_proc(
             SendMessageW(
                 H_CALC_LABEL,
                 WM_SETFONT,
-                WPARAM(H_FONT.0 as usize),
+                WPARAM(H_CALC_FONT.0 as usize),
                 LPARAM(1),
             );
             ShowWindow(H_CALC_LABEL, SW_HIDE);
 
+            // Create list view with better styling
             H_LIST = CreateWindowExW(
                 WS_EX_CLIENTEDGE,
                 w!("SysListView32"),
@@ -404,10 +415,10 @@ unsafe extern "system" fn wnd_proc(
                         | LVS_SHOWSELALWAYS as u32
                         | LVS_SHAREIMAGELISTS as u32,
                 ),
-                10,
-                70,
-                380,
-                520,
+                PADDING,
+                LIST_TOP,
+                400 - PADDING * 2,
+                600 - LIST_TOP - PADDING,
                 hwnd,
                 HMENU(ID_LIST as isize),
                 None,
@@ -417,6 +428,7 @@ unsafe extern "system" fn wnd_proc(
             let _ = ui::setup_listview(H_LIST, IS_DARK_MODE);
             SendMessageW(H_LIST, WM_SETFONT, WPARAM(H_FONT.0 as usize), LPARAM(1));
 
+            // Use large image list for better visibility
             let sys_img_list = ui::get_system_image_list();
             if sys_img_list != 0 {
                 SendMessageW(
@@ -427,9 +439,18 @@ unsafe extern "system" fn wnd_proc(
                 );
             }
 
+            // Set item spacing for larger row height
+            SendMessageW(
+                H_LIST,
+                LVM_SETICONSPACING,
+                WPARAM(0),
+                LPARAM(((ROW_HEIGHT as isize) << 16) | 32), // width=32, height=ROW_HEIGHT
+            );
+
+            // Set column width to fill list view (accounting for vertical scrollbar ~17px)
             let mut col = LVCOLUMNW {
                 mask: LVCF_WIDTH,
-                cx: 350,
+                cx: 400 - PADDING * 2 - 4 - 17, // -4 for borders, -17 for scrollbar
                 ..Default::default()
             };
             SendMessageW(
@@ -444,12 +465,34 @@ unsafe extern "system" fn wnd_proc(
         WM_SIZE => {
             let width = (lparam.0 & 0xFFFF) as i32;
             let height = ((lparam.0 >> 16) & 0xFFFF) as i32;
-            let _ = MoveWindow(H_EDIT, 10, 10, width - 20, 25, true);
-            let _ = MoveWindow(H_CALC_LABEL, 10, 40, width - 20, 20, true);
-            let _ = MoveWindow(H_LIST, 10, 70, width - 20, height - 80, true);
+            let _ = MoveWindow(
+                H_EDIT,
+                PADDING,
+                PADDING,
+                width - PADDING * 2,
+                SEARCH_HEIGHT,
+                true,
+            );
+            let _ = MoveWindow(
+                H_CALC_LABEL,
+                PADDING,
+                PADDING + SEARCH_HEIGHT + 5,
+                width - PADDING * 2,
+                CALC_LABEL_HEIGHT,
+                true,
+            );
+            let _ = MoveWindow(
+                H_LIST,
+                PADDING,
+                LIST_TOP,
+                width - PADDING * 2,
+                height - LIST_TOP - PADDING,
+                true,
+            );
+            // Set column width to fill list view (accounting for vertical scrollbar ~17px)
             let mut col = LVCOLUMNW {
                 mask: LVCF_WIDTH,
-                cx: width - 40,
+                cx: width - PADDING * 2 - 4 - 17, // -4 for borders, -17 for scrollbar
                 ..Default::default()
             };
             SendMessageW(

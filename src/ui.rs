@@ -16,14 +16,39 @@ pub unsafe fn init_common_controls() {
     InitCommonControlsEx(&icce);
 }
 
-/// Create a font for the UI
+/// Create a font for the UI (main text)
 pub unsafe fn create_ui_font() -> HFONT {
     let mut lf = LOGFONTW::default();
-    lf.lfHeight = -14;
+    lf.lfHeight = -16; // Larger font size for better readability
     lf.lfWeight = 400;
-    let font_name = utils::to_wide_string("Segoe UI");
+    let font_name = utils::to_wide_string("Segoe UI Variable Text"); // Modern Windows 11 font
     lf.lfFaceName[..font_name.len().min(32)].copy_from_slice(&font_name[..font_name.len().min(32)]);
-    CreateFontIndirectW(&lf)
+    let font = CreateFontIndirectW(&lf);
+    // Fallback to Segoe UI if Variable font not available
+    if font.0 == 0 {
+        let fallback_name = utils::to_wide_string("Segoe UI");
+        lf.lfFaceName[..fallback_name.len().min(32)]
+            .copy_from_slice(&fallback_name[..fallback_name.len().min(32)]);
+        return CreateFontIndirectW(&lf);
+    }
+    font
+}
+
+/// Create a larger font for the calculator result
+pub unsafe fn create_calc_font() -> HFONT {
+    let mut lf = LOGFONTW::default();
+    lf.lfHeight = -20; // Larger font for calculator result
+    lf.lfWeight = 600; // Semi-bold
+    let font_name = utils::to_wide_string("Segoe UI Variable Display");
+    lf.lfFaceName[..font_name.len().min(32)].copy_from_slice(&font_name[..font_name.len().min(32)]);
+    let font = CreateFontIndirectW(&lf);
+    if font.0 == 0 {
+        let fallback_name = utils::to_wide_string("Segoe UI");
+        lf.lfFaceName[..fallback_name.len().min(32)]
+            .copy_from_slice(&fallback_name[..fallback_name.len().min(32)]);
+        return CreateFontIndirectW(&lf);
+    }
+    font
 }
 
 /// Setup window with rounded corners and dark mode
@@ -82,8 +107,21 @@ pub unsafe fn setup_listview(hwnd: HWND, dark_mode: bool) -> Result<()> {
     Ok(())
 }
 
-/// Get system image list for icons
+/// Get system image list for icons (large icons for better visibility)
 pub unsafe fn get_system_image_list() -> isize {
+    let mut shfi = SHFILEINFOW::default();
+    SHGetFileInfoW(
+        w!(""),
+        FILE_FLAGS_AND_ATTRIBUTES(FILE_ATTRIBUTE_NORMAL.0),
+        Some(&mut shfi),
+        std::mem::size_of::<SHFILEINFOW>() as u32,
+        SHGFI_SYSICONINDEX | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES, // Changed to LARGEICON
+    ) as isize
+}
+
+/// Get system image list for small icons
+#[allow(dead_code)]
+pub unsafe fn get_system_image_list_small() -> isize {
     let mut shfi = SHFILEINFOW::default();
     SHGetFileInfoW(
         w!(""),
