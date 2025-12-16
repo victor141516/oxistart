@@ -28,6 +28,10 @@ static mut H_LIST: HWND = HWND(0);
 static mut KEYBOARD_HOOK: HHOOK = HHOOK(0);
 static mut MOUSE_HOOK: HHOOK = HHOOK(0);
 static APP_MANAGER: Lazy<Mutex<AppManager>> = Lazy::new(|| Mutex::new(AppManager::new()));
+
+// Win key hold tracking
+static mut WIN_KEY_PRESS_TIME: Option<std::time::Instant> = None;
+const WIN_KEY_HOLD_THRESHOLD_MS: u128 = 1000; // 1 second
 const WM_APP_TRAY: u32 = WM_USER + 1;
 const ID_TRAY_EXIT: usize = 1001;
 const ID_EDIT: i32 = 1002;
@@ -905,7 +909,11 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         let kbd = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         if wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize {
             if kbd.vkCode == VK_LWIN.0 as u32 || kbd.vkCode == VK_RWIN.0 as u32 {
-                toggle_menu();
+                // Record when Win key was pressed (only on initial press, not repeat)
+                if WIN_KEY_PRESS_TIME.is_none() {
+                    WIN_KEY_PRESS_TIME = Some(std::time::Instant::now());
+                }
+                // Block the key down event to prevent native Start menu
                 return LRESULT(1);
             }
             if GetForegroundWindow() == MY_WINDOW {
@@ -1040,6 +1048,29 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         }
         if wparam.0 == WM_KEYUP as usize || wparam.0 == WM_SYSKEYUP as usize {
             if kbd.vkCode == VK_LWIN.0 as u32 || kbd.vkCode == VK_RWIN.0 as u32 {
+                if let Some(press_time) = WIN_KEY_PRESS_TIME.take() {
+                    let hold_duration = press_time.elapsed().as_millis();
+
+                    if hold_duration < WIN_KEY_HOLD_THRESHOLD_MS {
+                        // Short press: show/hide our custom menu
+                        toggle_menu();
+                    } else {
+                        // Long press (>= 1 second): open native Windows Start menu
+                        // Simulate Win key press/release to trigger native Start menu
+                        let mut inputs: [INPUT; 2] = std::mem::zeroed();
+
+                        // Key down
+                        inputs[0].r#type = INPUT_KEYBOARD;
+                        inputs[0].Anonymous.ki.wVk = VIRTUAL_KEY(VK_LWIN.0);
+
+                        // Key up
+                        inputs[1].r#type = INPUT_KEYBOARD;
+                        inputs[1].Anonymous.ki.wVk = VIRTUAL_KEY(VK_LWIN.0);
+                        inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
+
+                        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+                    }
+                }
                 return LRESULT(1);
             }
         }
