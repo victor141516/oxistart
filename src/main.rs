@@ -32,7 +32,8 @@ static APP_MANAGER: Lazy<Mutex<AppManager>> = Lazy::new(|| Mutex::new(AppManager
 // Win key hold tracking
 static mut WIN_KEY_PRESS_TIME: Option<std::time::Instant> = None;
 const WIN_KEY_HOLD_THRESHOLD_MS: u128 = 1000; // 1 second
-const LLKHF_INJECTED: u32 = 0x10; // Flag indicating injected input
+const LLKHF_INJECTED: u32 = 0x10; // Flag indicating injected keyboard input
+const LLMHF_INJECTED: u32 = 0x01; // Flag indicating injected mouse input
 const WM_APP_TRAY: u32 = WM_USER + 1;
 const ID_TRAY_EXIT: usize = 1001;
 const ID_EDIT: i32 = 1002;
@@ -905,6 +906,42 @@ unsafe fn launch_selected_app_location() {
     launch_selected_app_with_modifier(false, true);
 }
 
+/// Open the native Windows Start menu by clicking the Start button
+unsafe fn open_native_start_menu() {
+    // Find the Start button and click it
+    if let Some(start_rect) = hooks::get_start_button_rect() {
+        let center_x = (start_rect.left + start_rect.right) / 2;
+        let center_y = (start_rect.top + start_rect.bottom) / 2;
+
+        // Simulate a mouse click on the Start button
+        let mut inputs: [INPUT; 2] = std::mem::zeroed();
+
+        // Move mouse to the start button (absolute coordinates)
+        let screen_width = GetSystemMetrics(SM_CXSCREEN);
+        let screen_height = GetSystemMetrics(SM_CYSCREEN);
+
+        // Convert to absolute coordinates (0-65535 range)
+        let abs_x = (center_x * 65535 / screen_width) as u32;
+        let abs_y = (center_y * 65535 / screen_height) as u32;
+
+        // Mouse down
+        inputs[0].r#type = INPUT_MOUSE;
+        inputs[0].Anonymous.mi.dx = abs_x as i32;
+        inputs[0].Anonymous.mi.dy = abs_y as i32;
+        inputs[0].Anonymous.mi.dwFlags =
+            MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+
+        // Mouse up
+        inputs[1].r#type = INPUT_MOUSE;
+        inputs[1].Anonymous.mi.dx = abs_x as i32;
+        inputs[1].Anonymous.mi.dy = abs_y as i32;
+        inputs[1].Anonymous.mi.dwFlags =
+            MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTUP;
+
+        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
         let kbd = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
@@ -1071,19 +1108,8 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                         toggle_menu();
                     } else {
                         // Long press (>= 1 second): open native Windows Start menu
-                        // Simulate Win key press/release to trigger native Start menu
-                        let mut inputs: [INPUT; 2] = std::mem::zeroed();
-
-                        // Key down
-                        inputs[0].r#type = INPUT_KEYBOARD;
-                        inputs[0].Anonymous.ki.wVk = VIRTUAL_KEY(VK_LWIN.0);
-
-                        // Key up
-                        inputs[1].r#type = INPUT_KEYBOARD;
-                        inputs[1].Anonymous.ki.wVk = VIRTUAL_KEY(VK_LWIN.0);
-                        inputs[1].Anonymous.ki.dwFlags = KEYEVENTF_KEYUP;
-
-                        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+                        // Click the Start button to trigger native Start menu
+                        open_native_start_menu();
                     }
                 }
                 return LRESULT(1);
@@ -1104,6 +1130,12 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
                 x: mouse.pt.x,
                 y: mouse.pt.y,
             };
+
+            // Check if this is an injected input - let it through
+            let is_injected = (mouse.flags & LLMHF_INJECTED) != 0;
+            if is_injected {
+                return CallNextHookEx(MOUSE_HOOK, code, wparam, lparam);
+            }
 
             // Check if clicking on start button
             if hooks::is_start_button_click(pt) {

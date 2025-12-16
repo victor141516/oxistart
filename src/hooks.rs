@@ -36,6 +36,21 @@ pub unsafe fn is_start_button_click(pt: POINT) -> bool {
     false
 }
 
+/// Get the Start button rectangle
+pub unsafe fn get_start_button_rect() -> Option<RECT> {
+    let taskbar = FindWindowW(w!("Shell_TrayWnd"), None);
+    let start_btn = FindWindowExW(taskbar, HWND(0), w!("Start"), None);
+
+    if start_btn.0 != 0 {
+        let mut rect = RECT::default();
+        if GetWindowRect(start_btn, &mut rect).is_ok() {
+            return Some(rect);
+        }
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
