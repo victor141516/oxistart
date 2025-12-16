@@ -2,6 +2,8 @@ use crate::app_model::{AppEntry, AppManager};
 use crate::db;
 use crate::settings;
 use crate::utils;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use windows::{core::*, Win32::System::Com::*};
 
 /// Scan all applications from Start Menu shortcuts
@@ -30,6 +32,10 @@ pub unsafe fn scan_apps(app_manager: &mut AppManager) {
                         if let Some(extension) = entry.path().extension() {
                             if extension == "lnk" {
                                 if let Some(app) = process_shortcut(&entry.path(), &usage_map) {
+                                    app_manager.add_app(app);
+                                }
+                            } else if extension == "url" {
+                                if let Some(app) = process_url_shortcut(&entry.path(), &usage_map) {
                                     app_manager.add_app(app);
                                 }
                             }
@@ -71,6 +77,10 @@ fn scan_directory_recursively(
                     if let Some(extension) = entry.path().extension() {
                         if extension == "lnk" {
                             if let Some(app) = process_shortcut(&entry.path(), usage_map) {
+                                app_manager.add_app(app);
+                            }
+                        } else if extension == "url" {
+                            if let Some(app) = process_url_shortcut(&entry.path(), usage_map) {
                                 app_manager.add_app(app);
                             }
                         }
@@ -119,6 +129,109 @@ fn process_shortcut(
     } else {
         None
     }
+}
+
+/// Process a URL shortcut file (.url) to extract application information
+/// These are internet shortcuts used by Steam games and other applications
+fn process_url_shortcut(
+    shortcut_path: &std::path::Path,
+    usage_map: &std::collections::HashMap<String, i32>,
+) -> Option<AppEntry> {
+    // Parse the .url file
+    let (url, icon_file, icon_index) = parse_url_file(shortcut_path)?;
+
+    // Get the display name from the filename (without .url extension)
+    let name = shortcut_path.file_stem()?.to_string_lossy().to_string();
+
+    // Skip problematic entries
+    if should_filter_url_shortcut(&name, &url) {
+        write_debug_log(&format!("Filtering out URL shortcut: {} -> {}", name, url));
+        return None;
+    }
+
+    // Get icon index - try from the icon file if specified, otherwise use default
+    let final_icon_index = if let Some(ref icon_path) = icon_file {
+        unsafe {
+            utils::get_file_info_path(icon_path)
+                .map(|shfi| shfi.iIcon)
+                .unwrap_or(icon_index.unwrap_or(0))
+        }
+    } else {
+        // Try to get icon from a known application for the protocol
+        get_protocol_icon_index(&url).unwrap_or(0)
+    };
+
+    // Get usage count
+    let usage_count = *usage_map.get(&url).unwrap_or(&0);
+
+    write_debug_log(&format!("Added URL shortcut: {} -> {}", name, url));
+
+    Some(AppEntry::new(name, url, final_icon_index, usage_count))
+}
+
+/// Parse a .url file and extract URL, IconFile, and IconIndex
+fn parse_url_file(path: &std::path::Path) -> Option<(String, Option<String>, Option<i32>)> {
+    let file = File::open(path).ok()?;
+    let reader = BufReader::new(file);
+
+    let mut url: Option<String> = None;
+    let mut icon_file: Option<String> = None;
+    let mut icon_index: Option<i32> = None;
+
+    for line in reader.lines().map_while(|r| r.ok()) {
+        let line = line.trim();
+
+        if let Some(value) = line.strip_prefix("URL=") {
+            url = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("IconFile=") {
+            icon_file = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("IconIndex=") {
+            icon_index = value.parse().ok();
+        }
+    }
+
+    url.map(|u| (u, icon_file, icon_index))
+}
+
+/// Check if a URL shortcut should be filtered out
+fn should_filter_url_shortcut(name: &str, url: &str) -> bool {
+    // Filter out empty URLs
+    if url.is_empty() {
+        return true;
+    }
+
+    // Filter out uninstall shortcuts
+    let name_lower = name.to_lowercase();
+    if name_lower.contains("uninstall") || name_lower.contains("setup") {
+        return true;
+    }
+
+    // Filter out http/https URLs (we only want protocol handlers like steam://)
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return true;
+    }
+
+    false
+}
+
+/// Get icon index for known protocol handlers
+fn get_protocol_icon_index(url: &str) -> Option<i32> {
+    // For Steam URLs, try to get the Steam icon
+    if url.starts_with("steam://") {
+        // Try to find Steam executable for its icon
+        let steam_paths = [
+            "C:\\Program Files (x86)\\Steam\\steam.exe",
+            "C:\\Program Files\\Steam\\steam.exe",
+        ];
+
+        for steam_path in steam_paths {
+            if std::path::Path::new(steam_path).exists() {
+                return unsafe { utils::get_file_info_path(steam_path).map(|shfi| shfi.iIcon) };
+            }
+        }
+    }
+
+    None
 }
 
 /// Get the target path from a .lnk shortcut file
