@@ -31,6 +31,7 @@ static APP_MANAGER: Lazy<Mutex<AppManager>> = Lazy::new(|| Mutex::new(AppManager
 
 // Win key hold tracking
 static mut WIN_KEY_PRESS_TIME: Option<std::time::Instant> = None;
+static mut ALLOW_NATIVE_WIN_KEY: bool = false; // Flag to allow simulated Win key through
 const WIN_KEY_HOLD_THRESHOLD_MS: u128 = 1000; // 1 second
 const WM_APP_TRAY: u32 = WM_USER + 1;
 const ID_TRAY_EXIT: usize = 1001;
@@ -909,6 +910,12 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         let kbd = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         if wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize {
             if kbd.vkCode == VK_LWIN.0 as u32 || kbd.vkCode == VK_RWIN.0 as u32 {
+                // Check if this is a simulated key we should allow through
+                if ALLOW_NATIVE_WIN_KEY {
+                    ALLOW_NATIVE_WIN_KEY = false;
+                    return CallNextHookEx(KEYBOARD_HOOK, code, wparam, lparam);
+                }
+
                 // Record when Win key was pressed (only on initial press, not repeat)
                 if WIN_KEY_PRESS_TIME.is_none() {
                     WIN_KEY_PRESS_TIME = Some(std::time::Instant::now());
@@ -1056,6 +1063,9 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                         toggle_menu();
                     } else {
                         // Long press (>= 1 second): open native Windows Start menu
+                        // Set flag to allow the simulated Win key through our hook
+                        ALLOW_NATIVE_WIN_KEY = true;
+
                         // Simulate Win key press/release to trigger native Start menu
                         let mut inputs: [INPUT; 2] = std::mem::zeroed();
 
