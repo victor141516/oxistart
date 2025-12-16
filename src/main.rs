@@ -379,6 +379,15 @@ unsafe extern "system" fn wnd_proc(
             );
             SendMessageW(H_EDIT, WM_SETFONT, WPARAM(H_FONT.0 as usize), LPARAM(1));
 
+            // Set placeholder text
+            let placeholder = w!("Search apps and settings...");
+            SendMessageW(
+                H_EDIT,
+                EM_SETCUEBANNER,
+                WPARAM(1),
+                LPARAM(placeholder.as_ptr() as isize),
+            );
+
             // Create calculator result label (below the input, left-aligned)
             H_CALC_LABEL = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
