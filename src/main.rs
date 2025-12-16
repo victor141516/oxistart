@@ -1027,7 +1027,7 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
     if code >= 0 {
         let msg = wparam.0 as u32;
 
-        // Interceptar tanto el click (down) como el release (up) del botón de inicio
+        // Handle left button clicks
         if msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP {
             let mouse = &*(lparam.0 as *const MSLLHOOKSTRUCT);
             let pt = POINT {
@@ -1035,12 +1035,32 @@ unsafe extern "system" fn mouse_hook(code: i32, wparam: WPARAM, lparam: LPARAM) 
                 y: mouse.pt.y,
             };
 
+            // Check if clicking on start button
             if hooks::is_start_button_click(pt) {
                 // Solo abrir el menú en el down, pero bloquear ambos eventos
                 if msg == WM_LBUTTONDOWN {
                     toggle_menu();
                 }
                 return LRESULT(1);
+            }
+
+            // Check if clicking outside our menu while it's visible
+            if msg == WM_LBUTTONDOWN && IsWindowVisible(MY_WINDOW).as_bool() {
+                let mut window_rect = RECT::default();
+                if GetWindowRect(MY_WINDOW, &mut window_rect).is_ok() {
+                    // Check if click is outside our window
+                    if pt.x < window_rect.left
+                        || pt.x > window_rect.right
+                        || pt.y < window_rect.top
+                        || pt.y > window_rect.bottom
+                    {
+                        // Close the menu
+                        ShowWindow(MY_WINDOW, SW_HIDE);
+                        let _ = SetWindowTextW(H_EDIT, w!(""));
+                        update_filter("");
+                        // Don't block the click - let it pass through to whatever was clicked
+                    }
+                }
             }
         }
     }
@@ -1054,6 +1074,7 @@ unsafe fn toggle_menu() {
         update_filter("");
     } else {
         if let Some(rect) = ui::get_target_rect() {
+            // First position the window without showing it
             let _ = SetWindowPos(
                 MY_WINDOW,
                 HWND_TOPMOST,
@@ -1061,21 +1082,33 @@ unsafe fn toggle_menu() {
                 rect.top,
                 rect.right - rect.left,
                 rect.bottom - rect.top,
-                SWP_SHOWWINDOW,
+                SWP_NOACTIVATE, // Don't activate yet
             );
+
+            // Show the window
             ShowWindow(MY_WINDOW, SW_SHOW);
 
-            let foreground_thread = GetWindowThreadProcessId(GetForegroundWindow(), None);
+            // Force the window to the foreground - this is key for WM_ACTIVATE to work properly
+            let foreground_hwnd = GetForegroundWindow();
+            let foreground_thread = GetWindowThreadProcessId(foreground_hwnd, None);
             let my_thread = GetCurrentThreadId();
-            if foreground_thread != my_thread {
-                AttachThreadInput(my_thread, foreground_thread, true);
-                SetForegroundWindow(MY_WINDOW);
-                SetFocus(H_EDIT);
-                AttachThreadInput(my_thread, foreground_thread, false);
-            } else {
-                SetForegroundWindow(MY_WINDOW);
-                SetFocus(H_EDIT);
-            }
+
+            // Attach to the foreground window's thread to allow stealing focus
+            AttachThreadInput(my_thread, foreground_thread, true);
+
+            // BringWindowToTop ensures proper Z-order
+            let _ = BringWindowToTop(MY_WINDOW);
+
+            // SetForegroundWindow activates the window (triggers WM_ACTIVATE)
+            SetForegroundWindow(MY_WINDOW);
+
+            // Set focus to the edit control
+            SetFocus(H_EDIT);
+
+            // Detach from the foreground thread
+            AttachThreadInput(my_thread, foreground_thread, false);
+
+            // Select all text in the edit control
             SendMessageW(H_EDIT, EM_SETSEL, WPARAM(0), LPARAM(-1));
         }
     }
