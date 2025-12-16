@@ -99,8 +99,8 @@ fn process_shortcut(
     shortcut_path: &std::path::Path,
     usage_map: &std::collections::HashMap<String, i32>,
 ) -> Option<AppEntry> {
-    // Read the shortcut target
-    if let Some(target_path) = get_shortcut_target(shortcut_path) {
+    // Read the shortcut target and arguments
+    if let Some((target_path, arguments)) = get_shortcut_info(shortcut_path) {
         // Get the display name from the filename (without .lnk extension)
         let name = shortcut_path.file_stem()?.to_string_lossy().to_string();
 
@@ -123,9 +123,18 @@ fn process_shortcut(
         // Get usage count
         let usage_count = *usage_map.get(&target_path).unwrap_or(&0);
 
-        write_debug_log(&format!("Added app: {} -> {}", name, target_path));
+        write_debug_log(&format!(
+            "Added app: {} -> {} (args: {:?})",
+            name, target_path, arguments
+        ));
 
-        Some(AppEntry::new(name, target_path, icon_index, usage_count))
+        Some(AppEntry::new_with_args(
+            name,
+            target_path,
+            arguments,
+            icon_index,
+            usage_count,
+        ))
     } else {
         None
     }
@@ -234,8 +243,8 @@ fn get_protocol_icon_index(url: &str) -> Option<i32> {
     None
 }
 
-/// Get the target path from a .lnk shortcut file
-fn get_shortcut_target(shortcut_path: &std::path::Path) -> Option<String> {
+/// Get the target path and arguments from a .lnk shortcut file
+fn get_shortcut_info(shortcut_path: &std::path::Path) -> Option<(String, Option<String>)> {
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::System::Com::IPersistFile;
     use windows::Win32::UI::Shell::*;
@@ -271,15 +280,31 @@ fn get_shortcut_target(shortcut_path: &std::path::Path) -> Option<String> {
             )
             .ok()?;
 
-        // Convert to string
+        // Convert target path to string
         let target_str = String::from_utf16_lossy(&target_path);
         let target_str = target_str.trim_end_matches('\0');
 
         if target_str.is_empty() {
-            None
-        } else {
-            Some(target_str.to_string())
+            return None;
         }
+
+        // Get the arguments
+        let mut arguments = [0u16; 1024];
+        let args_result = shell_link.GetArguments(&mut arguments);
+
+        let arguments_str = if args_result.is_ok() {
+            let args = String::from_utf16_lossy(&arguments);
+            let args = args.trim_end_matches('\0').trim();
+            if args.is_empty() {
+                None
+            } else {
+                Some(args.to_string())
+            }
+        } else {
+            None
+        };
+
+        Some((target_str.to_string(), arguments_str))
     }
 }
 

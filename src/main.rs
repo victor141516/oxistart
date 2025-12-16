@@ -636,13 +636,21 @@ unsafe fn launch_selected_app_with_modifier(as_admin: bool, open_location: bool)
     let app_idx = item.lParam.0 as usize;
 
     // Obtener la información necesaria Y liberar el lock ANTES de ejecutar la app
-    let (parse_name, parse_name_wide, entry_type) = {
+    let (parse_name, parse_name_wide, arguments, arguments_wide, entry_type) = {
         let manager = APP_MANAGER.lock().unwrap();
         if let Some(app) = manager.apps().get(app_idx) {
             let parse_name = app.parse_name.clone();
             let parse_name_wide = utils::to_wide_string(&parse_name);
+            let arguments = app.arguments.clone();
+            let arguments_wide = arguments.as_ref().map(|a| utils::to_wide_string(a));
             let entry_type = app.entry_type.clone();
-            (parse_name, parse_name_wide, entry_type)
+            (
+                parse_name,
+                parse_name_wide,
+                arguments,
+                arguments_wide,
+                entry_type,
+            )
         } else {
             return;
         }
@@ -711,7 +719,10 @@ unsafe fn launch_selected_app_with_modifier(as_admin: bool, open_location: bool)
                 }
             } else {
                 // Normal execution
-                write_debug_log(&format!("Launching normally: {}", parse_name));
+                write_debug_log(&format!(
+                    "Launching normally: {} (args: {:?})",
+                    parse_name, arguments
+                ));
 
                 // Handle special parse names
                 let (final_parse_name, use_explorer) = if parse_name
@@ -757,14 +768,27 @@ unsafe fn launch_selected_app_with_modifier(as_admin: bool, open_location: bool)
                 };
 
                 let final_parse_name_wide = utils::to_wide_string(&final_parse_name);
-                let result = ShellExecuteW(
-                    None,
-                    w!("open"),
-                    PCWSTR(final_parse_name_wide.as_ptr()),
-                    None,
-                    None,
-                    SW_SHOW,
-                );
+
+                // Pass arguments if available
+                let result = if let Some(ref args_wide) = arguments_wide {
+                    ShellExecuteW(
+                        None,
+                        w!("open"),
+                        PCWSTR(final_parse_name_wide.as_ptr()),
+                        PCWSTR(args_wide.as_ptr()),
+                        None,
+                        SW_SHOW,
+                    )
+                } else {
+                    ShellExecuteW(
+                        None,
+                        w!("open"),
+                        PCWSTR(final_parse_name_wide.as_ptr()),
+                        None,
+                        None,
+                        SW_SHOW,
+                    )
+                };
 
                 if result.0 <= 32 {
                     write_debug_log(&format!(

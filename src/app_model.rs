@@ -13,6 +13,7 @@ pub enum AppEntryType {
 pub struct AppEntry {
     pub name: String,
     pub parse_name: String,
+    pub arguments: Option<String>,
     pub icon_index: i32,
     pub usage_count: i32,
     pub entry_type: AppEntryType,
@@ -24,6 +25,25 @@ impl AppEntry {
         Self {
             name,
             parse_name,
+            arguments: None,
+            icon_index,
+            usage_count,
+            entry_type: AppEntryType::Application,
+        }
+    }
+
+    /// Create a new AppEntry with arguments
+    pub fn new_with_args(
+        name: String,
+        parse_name: String,
+        arguments: Option<String>,
+        icon_index: i32,
+        usage_count: i32,
+    ) -> Self {
+        Self {
+            name,
+            parse_name,
+            arguments,
             icon_index,
             usage_count,
             entry_type: AppEntryType::Application,
@@ -35,6 +55,7 @@ impl AppEntry {
         Self {
             name,
             parse_name,
+            arguments: None,
             icon_index,
             usage_count: 0, // Settings items don't track usage
             entry_type: AppEntryType::Settings,
