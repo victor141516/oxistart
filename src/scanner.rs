@@ -99,8 +99,9 @@ fn process_shortcut(
     shortcut_path: &std::path::Path,
     usage_map: &std::collections::HashMap<String, i32>,
 ) -> Option<AppEntry> {
-    // Read the shortcut target and arguments
-    if let Some((target_path, arguments)) = get_shortcut_info(shortcut_path) {
+    // Read the shortcut target, arguments, and icon info
+    if let Some((target_path, arguments, icon_path, _icon_index)) = get_shortcut_info(shortcut_path)
+    {
         // Get the display name from the filename (without .lnk extension)
         let name = shortcut_path.file_stem()?.to_string_lossy().to_string();
 
@@ -113,19 +114,35 @@ fn process_shortcut(
             return None;
         }
 
-        // Get icon index
+        // Get icon index - prefer shortcut's icon, fall back to target's icon
         let icon_index = unsafe {
-            utils::get_file_info_path(&target_path)
-                .map(|shfi| shfi.iIcon)
-                .unwrap_or(0)
+            if let Some(ref icon_loc) = icon_path {
+                if !icon_loc.is_empty() && std::path::Path::new(icon_loc).exists() {
+                    utils::get_file_info_path(icon_loc)
+                        .map(|shfi| shfi.iIcon)
+                        .unwrap_or_else(|| {
+                            utils::get_file_info_path(&target_path)
+                                .map(|shfi| shfi.iIcon)
+                                .unwrap_or(0)
+                        })
+                } else {
+                    utils::get_file_info_path(&target_path)
+                        .map(|shfi| shfi.iIcon)
+                        .unwrap_or(0)
+                }
+            } else {
+                utils::get_file_info_path(&target_path)
+                    .map(|shfi| shfi.iIcon)
+                    .unwrap_or(0)
+            }
         };
 
         // Get usage count
         let usage_count = *usage_map.get(&target_path).unwrap_or(&0);
 
         write_debug_log(&format!(
-            "Added app: {} -> {} (args: {:?})",
-            name, target_path, arguments
+            "Added app: {} -> {} (args: {:?}, icon: {:?})",
+            name, target_path, arguments, icon_path
         ));
 
         Some(AppEntry::new_with_args(
@@ -243,8 +260,10 @@ fn get_protocol_icon_index(url: &str) -> Option<i32> {
     None
 }
 
-/// Get the target path and arguments from a .lnk shortcut file
-fn get_shortcut_info(shortcut_path: &std::path::Path) -> Option<(String, Option<String>)> {
+/// Get the target path, arguments, and icon info from a .lnk shortcut file
+fn get_shortcut_info(
+    shortcut_path: &std::path::Path,
+) -> Option<(String, Option<String>, Option<String>, i32)> {
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::System::Com::IPersistFile;
     use windows::Win32::UI::Shell::*;
@@ -304,7 +323,29 @@ fn get_shortcut_info(shortcut_path: &std::path::Path) -> Option<(String, Option<
             None
         };
 
-        Some((target_str.to_string(), arguments_str))
+        // Get the icon location
+        let mut icon_path = [0u16; 260];
+        let mut icon_index: i32 = 0;
+        let icon_result = shell_link.GetIconLocation(&mut icon_path, &mut icon_index);
+
+        let icon_path_str = if icon_result.is_ok() {
+            let icon = String::from_utf16_lossy(&icon_path);
+            let icon = icon.trim_end_matches('\0').trim();
+            if icon.is_empty() {
+                None
+            } else {
+                Some(icon.to_string())
+            }
+        } else {
+            None
+        };
+
+        Some((
+            target_str.to_string(),
+            arguments_str,
+            icon_path_str,
+            icon_index,
+        ))
     }
 }
 
