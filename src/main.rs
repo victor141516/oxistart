@@ -31,8 +31,8 @@ static APP_MANAGER: Lazy<Mutex<AppManager>> = Lazy::new(|| Mutex::new(AppManager
 
 // Win key hold tracking
 static mut WIN_KEY_PRESS_TIME: Option<std::time::Instant> = None;
-static mut ALLOW_NATIVE_WIN_KEY: bool = false; // Flag to allow simulated Win key through
 const WIN_KEY_HOLD_THRESHOLD_MS: u128 = 1000; // 1 second
+const LLKHF_INJECTED: u32 = 0x10; // Flag indicating injected input
 const WM_APP_TRAY: u32 = WM_USER + 1;
 const ID_TRAY_EXIT: usize = 1001;
 const ID_EDIT: i32 = 1002;
@@ -908,11 +908,14 @@ unsafe fn launch_selected_app_location() {
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
         let kbd = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+
+        // Check if this is an injected input (from SendInput) - let it through
+        let is_injected = (kbd.flags.0 & LLKHF_INJECTED) != 0;
+
         if wparam.0 == WM_KEYDOWN as usize || wparam.0 == WM_SYSKEYDOWN as usize {
             if kbd.vkCode == VK_LWIN.0 as u32 || kbd.vkCode == VK_RWIN.0 as u32 {
-                // Check if this is a simulated key we should allow through
-                if ALLOW_NATIVE_WIN_KEY {
-                    ALLOW_NATIVE_WIN_KEY = false;
+                // Let injected keys through to allow SendInput to work
+                if is_injected {
                     return CallNextHookEx(KEYBOARD_HOOK, code, wparam, lparam);
                 }
 
@@ -1055,6 +1058,11 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         }
         if wparam.0 == WM_KEYUP as usize || wparam.0 == WM_SYSKEYUP as usize {
             if kbd.vkCode == VK_LWIN.0 as u32 || kbd.vkCode == VK_RWIN.0 as u32 {
+                // Let injected keys through
+                if is_injected {
+                    return CallNextHookEx(KEYBOARD_HOOK, code, wparam, lparam);
+                }
+
                 if let Some(press_time) = WIN_KEY_PRESS_TIME.take() {
                     let hold_duration = press_time.elapsed().as_millis();
 
@@ -1063,9 +1071,6 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                         toggle_menu();
                     } else {
                         // Long press (>= 1 second): open native Windows Start menu
-                        // Set flag to allow the simulated Win key through our hook
-                        ALLOW_NATIVE_WIN_KEY = true;
-
                         // Simulate Win key press/release to trigger native Start menu
                         let mut inputs: [INPUT; 2] = std::mem::zeroed();
 
