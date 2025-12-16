@@ -31,9 +31,12 @@ static APP_MANAGER: Lazy<Mutex<AppManager>> = Lazy::new(|| Mutex::new(AppManager
 
 // Win key hold tracking
 static mut WIN_KEY_PRESS_TIME: Option<std::time::Instant> = None;
+static mut WIN_KEY_NATIVE_TRIGGERED: bool = false; // Flag to prevent double triggering
 const WIN_KEY_HOLD_THRESHOLD_MS: u128 = 1000; // 1 second
 const LLKHF_INJECTED: u32 = 0x10; // Flag indicating injected keyboard input
 const LLMHF_INJECTED: u32 = 0x01; // Flag indicating injected mouse input
+const WIN_KEY_TIMER_ID: usize = 9001;
+const WIN_KEY_TIMER_INTERVAL: u32 = 100; // Check every 100ms
 const WM_APP_TRAY: u32 = WM_USER + 1;
 const ID_TRAY_EXIT: usize = 1001;
 const ID_EDIT: i32 = 1002;
@@ -608,6 +611,24 @@ unsafe extern "system" fn wnd_proc(
             }
             LRESULT(0)
         }
+        WM_TIMER => {
+            if wparam.0 == WIN_KEY_TIMER_ID {
+                // Check if Win key has been held for more than 1 second
+                if let Some(press_time) = WIN_KEY_PRESS_TIME {
+                    let hold_duration = press_time.elapsed().as_millis();
+                    if hold_duration >= WIN_KEY_HOLD_THRESHOLD_MS && !WIN_KEY_NATIVE_TRIGGERED {
+                        // Trigger native Start menu immediately
+                        WIN_KEY_NATIVE_TRIGGERED = true;
+                        KillTimer(MY_WINDOW, WIN_KEY_TIMER_ID);
+                        open_native_start_menu();
+                    }
+                } else {
+                    // No key being held, kill timer
+                    KillTimer(MY_WINDOW, WIN_KEY_TIMER_ID);
+                }
+            }
+            LRESULT(0)
+        }
         WM_DESTROY => {
             PostQuitMessage(0);
             LRESULT(0)
@@ -959,6 +980,9 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                 // Record when Win key was pressed (only on initial press, not repeat)
                 if WIN_KEY_PRESS_TIME.is_none() {
                     WIN_KEY_PRESS_TIME = Some(std::time::Instant::now());
+                    WIN_KEY_NATIVE_TRIGGERED = false;
+                    // Start a timer to check for long press
+                    SetTimer(MY_WINDOW, WIN_KEY_TIMER_ID, WIN_KEY_TIMER_INTERVAL, None);
                 }
                 // Block the key down event to prevent native Start menu
                 return LRESULT(1);
@@ -1100,17 +1124,19 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
                     return CallNextHookEx(KEYBOARD_HOOK, code, wparam, lparam);
                 }
 
-                if let Some(press_time) = WIN_KEY_PRESS_TIME.take() {
-                    let hold_duration = press_time.elapsed().as_millis();
+                // Kill the timer
+                KillTimer(MY_WINDOW, WIN_KEY_TIMER_ID);
 
-                    if hold_duration < WIN_KEY_HOLD_THRESHOLD_MS {
-                        // Short press: show/hide our custom menu
-                        toggle_menu();
-                    } else {
-                        // Long press (>= 1 second): open native Windows Start menu
-                        // Click the Start button to trigger native Start menu
-                        open_native_start_menu();
-                    }
+                // Check if native Start menu was already triggered
+                if WIN_KEY_NATIVE_TRIGGERED {
+                    WIN_KEY_PRESS_TIME = None;
+                    WIN_KEY_NATIVE_TRIGGERED = false;
+                    return LRESULT(1);
+                }
+
+                if let Some(_press_time) = WIN_KEY_PRESS_TIME.take() {
+                    // Short press: show/hide our custom menu (native would have been triggered by timer)
+                    toggle_menu();
                 }
                 return LRESULT(1);
             }
